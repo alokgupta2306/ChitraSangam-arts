@@ -83,7 +83,6 @@ const orderSchema = new mongoose.Schema(
     qrCode: {
       type: String,
     },
-    // for rent orders
     rentDays: {
       type: Number,
     },
@@ -99,6 +98,12 @@ const orderSchema = new mongoose.Schema(
     depositRefunded: {
       type: Boolean,
       default: false,
+    },
+    razorpayOrderId: {
+      type: String,
+    },
+    razorpayPaymentId: {
+      type: String,
     },
   },
   { timestamps: true }

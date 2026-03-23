@@ -30,6 +30,7 @@ const financeRoutes = require("./routes/financeRoutes");
 const deliveryRoutes = require("./routes/deliveryRoutes");
 const joinRoutes = require("./routes/joinRoutes");
 const assignDeliveryRoutes = require("./routes/assignDeliveryRoutes");
+const razorpayRoutes = require("./routes/razorpayRoutes");
 
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
@@ -41,6 +42,7 @@ app.use("/api/finance", financeRoutes);
 app.use("/api/delivery", deliveryRoutes);
 app.use("/api/join", joinRoutes);
 app.use("/api/assign-delivery", assignDeliveryRoutes);
+app.use("/api/razorpay", razorpayRoutes);
 
 app.get("/", (req, res) => {
   res.send("ChitraSangam Arts API is running");

@@ -11,6 +11,7 @@ export default function BuyPaintings() {
   const [priceFilter, setPriceFilter] = useState("");
   const [artistFilter, setArtistFilter] = useState("");
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -18,9 +19,9 @@ export default function BuyPaintings() {
     const fetchData = async () => {
       try {
         const [pRes, aRes] = await Promise.all([
-        API.get("/paintings"),
-        API.get("/admin/artists").catch(() => ({ data: [] })),
-      ]);
+          API.get("/paintings"),
+          API.get("/admin/artists").catch(() => ({ data: [] })),
+        ]);
         setPaintings(pRes.data);
         setFiltered(pRes.data);
         setArtists(aRes.data);
@@ -34,7 +35,9 @@ export default function BuyPaintings() {
   useEffect(() => {
     let result = paintings;
     if (styleFilter) {
-      result = result.filter((p) => p.style?.toLowerCase().includes(styleFilter.toLowerCase()));
+      result = result.filter((p) =>
+        p.style?.toLowerCase().includes(styleFilter.toLowerCase())
+      );
     }
     if (priceFilter === "under1000") {
       result = result.filter((p) => p.buyPrice < 1000);
@@ -51,22 +54,94 @@ export default function BuyPaintings() {
 
   const handleBuy = async (painting) => {
     if (!user) { navigate("/login"); return; }
+
     const address = prompt("Enter your delivery address:");
     if (!address) return;
+
+    setLoading(true);
+    setMessage("");
+
+    try {
+      // Step 1 - create razorpay order
+      const res = await API.post("/razorpay/create-order", {
+        paintingId: painting._id,
+        orderType: "buy",
+      });
+
+      const { orderId, amount, currency, keyId, paintingTitle } = res.data;
+
+      // Step 2 - open razorpay checkout
+      const options = {
+        key: keyId,
+        amount,
+        currency,
+        name: "ChitraSangam Arts",
+        description: paintingTitle,
+        order_id: orderId,
+        handler: async (response) => {
+          try {
+            // Step 3 - verify payment
+            const verifyRes = await API.post("/razorpay/verify-payment", {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              paintingId: painting._id,
+              orderType: "buy",
+              deliveryAddress: address,
+            });
+
+            setMessage("Payment successful! Order placed for " + paintingTitle);
+            setLoading(false);
+          } catch (err) {
+            setMessage("Payment verification failed!");
+            setLoading(false);
+          }
+        },
+        prefill: {
+          name: user.name || "",
+          email: user.email || "",
+        },
+        theme: {
+          color: "#C45E0A",
+        },
+        modal: {
+          ondismiss: () => {
+            setLoading(false);
+            setMessage("Payment cancelled!");
+          },
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (err) {
+      setMessage(err.response?.data?.message || "Payment failed");
+      setLoading(false);
+    }
+  };
+
+  const handleCOD = async (painting) => {
+    if (!user) { navigate("/login"); return; }
+    const address = prompt("Enter your delivery address:");
+    if (!address) return;
+
     try {
       await API.post("/orders", {
         paintingId: painting._id,
         orderType: "buy",
         deliveryAddress: address,
-        paymentMethod: "online",
+        paymentMethod: "cod",
       });
-      setMessage("Order placed for " + painting.title + "! Total: ₹" + (painting.buyPrice + 30));
+      setMessage("COD Order placed for " + painting.title);
     } catch (err) {
       setMessage(err.response?.data?.message || "Order failed");
     }
   };
 
-  const styles = ["Abstract", "Watercolor", "Oil Painting", "Portrait", "Landscape", "Floral", "Acrylic", "Sketch"];
+  const styles = [
+    "Abstract", "Watercolor", "Oil Painting", "Portrait",
+    "Landscape", "Floral", "Acrylic", "Sketch",
+  ];
 
   const dropdownStyle = {
     backgroundColor: "#fff",
@@ -83,7 +158,6 @@ export default function BuyPaintings() {
   return (
     <div style={{ backgroundColor: "#FFFAF5", minHeight: "100vh", padding: "48px 32px" }}>
 
-      {/* Header */}
       <h1 style={{ fontFamily: "'Cormorant Garamond', serif", fontStyle: "italic", fontSize: "48px", color: "#7B1818", marginBottom: "8px" }}>
         Buy Paintings
       </h1>
@@ -92,7 +166,7 @@ export default function BuyPaintings() {
       </p>
 
       {message && (
-        <div style={{ backgroundColor: "#d4edda", color: "#155724", padding: "16px 20px", borderRadius: "8px", marginBottom: "24px", fontSize: "18px", fontFamily: "'Lato', sans-serif" }}>
+        <div style={{ backgroundColor: message.includes("success") || message.includes("placed") ? "#d4edda" : "#f8d7da", color: message.includes("success") || message.includes("placed") ? "#155724" : "#721c24", padding: "16px 20px", borderRadius: "8px", marginBottom: "24px", fontSize: "18px", fontFamily: "'Lato', sans-serif" }}>
           {message}
         </div>
       )}
@@ -154,25 +228,34 @@ export default function BuyPaintings() {
                 <p style={{ fontFamily: "'Lato', sans-serif", fontSize: "15px", color: "#A07850", marginBottom: "6px" }}>
                   by {p.artistName}
                 </p>
-
-                {/* Style Tag */}
                 <span style={{ backgroundColor: "#FEF7F0", color: "#C45E0A", fontFamily: "'Cinzel', serif", fontSize: "11px", padding: "3px 10px", borderRadius: "20px", display: "inline-block", marginBottom: "14px" }}>
                   {p.style}
                 </span>
 
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <p style={{ fontFamily: "'Lato', sans-serif", fontSize: "24px", fontWeight: "bold", color: "#C45E0A" }}>
-                    ₹{p.buyPrice}
-                  </p>
-                  {(p.availableFor === "buy" || p.availableFor === "both") && (
+                <p style={{ fontFamily: "'Lato', sans-serif", fontSize: "24px", fontWeight: "bold", color: "#C45E0A", marginBottom: "16px" }}>
+                  ₹{p.buyPrice} <span style={{ fontSize: "14px", color: "#A07850" }}>+ ₹30 delivery</span>
+                </p>
+
+                {(p.availableFor === "buy" || p.availableFor === "both") && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    {/* Pay Online with Razorpay */}
                     <button
                       onClick={() => handleBuy(p)}
-                      style={{ backgroundColor: "#C45E0A", color: "#fff", fontFamily: "'Cinzel', serif", fontSize: "14px", padding: "12px 24px", border: "none", borderRadius: "4px", cursor: "pointer", width: "100%" }}
+                      disabled={loading}
+                      style={{ backgroundColor: "#C45E0A", color: "#fff", fontFamily: "'Cinzel', serif", fontSize: "14px", padding: "12px 24px", border: "none", borderRadius: "4px", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}
                     >
-                      Buy Now
+                      {loading ? "Processing..." : "Pay Online (Razorpay)"}
                     </button>
-                  )}
-                </div>
+
+                    {/* Cash on Delivery */}
+                    <button
+                      onClick={() => handleCOD(p)}
+                      style={{ backgroundColor: "transparent", color: "#7B1818", fontFamily: "'Cinzel', serif", fontSize: "14px", padding: "12px 24px", border: "2px solid #7B1818", borderRadius: "4px", cursor: "pointer" }}
+                    >
+                      Cash on Delivery
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
